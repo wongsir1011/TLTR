@@ -3,8 +3,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import Webcam from 'react-webcam';
+import type { Part } from '@google/genai';
 import { 
   Sparkles, 
   Settings2, 
@@ -15,7 +17,10 @@ import {
   Type as TextIcon,
   Loader2,
   AlertCircle,
-  Share2
+  Share2,
+  FileText,
+  Camera,
+  X
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -41,9 +46,12 @@ export const RECEPTIVITY_OPTIONS = [
 ];
 
 export default function App() {
-  const [inputType, setInputType] = useState<'text' | 'url'>('text');
+  const [inputType, setInputType] = useState<'text' | 'url' | 'file' | 'camera'>('text');
   const [content, setContent] = useState('');
   const [url, setUrl] = useState('');
+  const [fileDetails, setFileDetails] = useState<{ name: string, data: string, mimeType: string } | null>(null);
+  const [cameraImage, setCameraImage] = useState<string | null>(null);
+  
   const [personality, setPersonality] = useState(PERSONALITY_OPTIONS[0].id);
   const [receptivity, setReceptivity] = useState(RECEPTIVITY_OPTIONS[0].id);
   
@@ -51,6 +59,29 @@ export default function App() {
   const [points, setPoints] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+
+  const webcamRef = useRef<Webcam>(null);
+
+  const capture = useCallback(() => {
+    const imageSrc = webcamRef.current?.getScreenshot();
+    if (imageSrc) {
+      setCameraImage(imageSrc);
+    }
+  }, [webcamRef]);
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const base64Url = event.target?.result as string; 
+      const mimeType = file.type || 'application/octet-stream';
+      const base64Data = base64Url.split(',')[1];
+      setFileDetails({ name: file.name, data: base64Data, mimeType });
+    };
+    reader.readAsDataURL(file);
+  };
+
 
   const handleScrape = async () => {
     const response = await fetch('/api/scrape', {
@@ -85,16 +116,38 @@ export default function App() {
     setPoints([]);
     
     try {
-      let textToSummarize = content;
+      let textToSummarize: string | Part[] = content;
+
       if (inputType === 'url') {
         if (!url.startsWith('http')) {
           throw new Error('請輸入正確的網址 (需包含 http:// 或 https://)');
         }
         textToSummarize = await handleScrape();
-      }
-
-      if (!textToSummarize.trim()) {
-        throw new Error('請輸入長文內容或網址。');
+      } else if (inputType === 'file') {
+        if (!fileDetails) {
+          throw new Error('請先上載文檔及圖像檔。');
+        }
+        textToSummarize = [{
+          inlineData: {
+            data: fileDetails.data,
+            mimeType: fileDetails.mimeType,
+          }
+        }];
+      } else if (inputType === 'camera') {
+        if (!cameraImage) {
+          throw new Error('請先使用相機拍攝照片。');
+        }
+        const base64Data = cameraImage.split(',')[1];
+        textToSummarize = [{
+          inlineData: {
+            data: base64Data,
+            mimeType: 'image/jpeg',
+          }
+        }];
+      } else {
+        if (!content.trim()) {
+          throw new Error('請輸入長文內容或網址。');
+        }
       }
 
       const p = PERSONALITY_OPTIONS.find(o => o.id === personality)?.label || personality;
@@ -232,36 +285,56 @@ export default function App() {
                 <h2 className="text-xs font-bold uppercase tracking-wider text-gray-500">來源內容</h2>
               </div>
 
-              <div className="flex gap-2 p-1 bg-white/30 rounded-xl mb-4 border border-white/40">
+              <div className="flex gap-2 p-1 bg-white/30 rounded-xl mb-4 border border-white/40 overflow-x-auto whitespace-nowrap scrollbar-hide">
                 <button
                   onClick={() => setInputType('text')}
                   className={cn(
-                    "flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-[11px] font-bold transition-all",
+                    "flex-1 min-w-[70px] flex items-center justify-center gap-1.5 py-2 rounded-lg text-[10px] md:text-[11px] font-bold transition-all",
                     inputType === 'text' ? "bg-white text-pink-500 shadow-sm" : "text-gray-500"
                   )}
                 >
-                  <TextIcon className="w-3.5 h-3.5" /> 貼上文字
+                  <TextIcon className="w-3.5 h-3.5" /> 文字
                 </button>
                 <button
                   onClick={() => setInputType('url')}
                   className={cn(
-                    "flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-[11px] font-bold transition-all",
+                    "flex-1 min-w-[70px] flex items-center justify-center gap-1.5 py-2 rounded-lg text-[10px] md:text-[11px] font-bold transition-all",
                     inputType === 'url' ? "bg-white text-pink-500 shadow-sm" : "text-gray-500"
                   )}
                 >
-                  <LinkIcon className="w-3.5 h-3.5" /> 網址連結
+                  <LinkIcon className="w-3.5 h-3.5" /> 網址
+                </button>
+                <button
+                  onClick={() => setInputType('file')}
+                  className={cn(
+                    "flex-1 min-w-[70px] flex items-center justify-center gap-1.5 py-2 rounded-lg text-[10px] md:text-[11px] font-bold transition-all",
+                    inputType === 'file' ? "bg-white text-pink-500 shadow-sm" : "text-gray-500"
+                  )}
+                >
+                  <FileText className="w-3.5 h-3.5" /> 上載
+                </button>
+                <button
+                  onClick={() => setInputType('camera')}
+                  className={cn(
+                    "flex-1 min-w-[70px] flex items-center justify-center gap-1.5 py-2 rounded-lg text-[10px] md:text-[11px] font-bold transition-all",
+                    inputType === 'camera' ? "bg-white text-pink-500 shadow-sm" : "text-gray-500"
+                  )}
+                >
+                  <Camera className="w-3.5 h-3.5" /> 相機
                 </button>
               </div>
 
               <div className="space-y-4">
-                {inputType === 'text' ? (
+                {inputType === 'text' && (
                   <textarea
                     value={content}
                     onChange={(e) => setContent(e.target.value)}
                     placeholder="貼上長篇文章內容..."
                     className="w-full h-32 bg-white/50 border border-white/60 rounded-2xl p-4 text-sm focus:outline-none focus:ring-2 focus:ring-pink-300 placeholder-gray-400 resize-none transition-all"
                   />
-                ) : (
+                )}
+                
+                {inputType === 'url' && (
                   <div className="relative">
                     <input
                       type="url"
@@ -271,6 +344,72 @@ export default function App() {
                       className="w-full p-4 bg-white/50 border border-white/60 rounded-2xl text-sm focus:outline-none focus:ring-2 focus:ring-pink-300 placeholder-gray-400 pl-12 transition-all"
                     />
                     <LinkIcon className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-300" />
+                  </div>
+                )}
+
+                {inputType === 'file' && (
+                  <div className="w-full relative border-2 border-dashed border-pink-200 bg-white/40 rounded-2xl p-6 transition-all hover:bg-white/60 flex flex-col items-center justify-center gap-3">
+                    <input 
+                      type="file" 
+                      accept="image/*,application/pdf,text/plain"
+                      onChange={handleFileUpload}
+                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                    />
+                    {fileDetails ? (
+                      <div className="flex flex-col items-center text-center">
+                        {fileDetails.mimeType.startsWith('image/') ? (
+                          <div className="relative w-24 h-24 mb-2 rounded-lg overflow-hidden border border-gray-200">
+                             <img src={`data:${fileDetails.mimeType};base64,${fileDetails.data}`} alt="preview" className="object-cover w-full h-full" />
+                          </div>
+                        ) : (
+                          <FileText className="w-10 h-10 text-pink-400 mb-2" />
+                        )}
+                        <p className="text-xs font-bold text-gray-700 max-w-[200px] truncate">{fileDetails.name}</p>
+                        <p className="text-[10px] text-gray-400">點擊重新上載</p>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="w-12 h-12 bg-pink-100 text-pink-500 rounded-full flex items-center justify-center">
+                          <FileText className="w-6 h-6" />
+                        </div>
+                        <p className="text-sm font-bold text-gray-600">點擊上載文檔及圖像檔</p>
+                        <p className="text-[10px] text-gray-400">支援 PDF, TXT 及圖片</p>
+                      </>
+                    )}
+                  </div>
+                )}
+
+                {inputType === 'camera' && (
+                  <div className="w-full rounded-2xl overflow-hidden bg-black/5 relative aspect-[4/3] flex flex-col">
+                    {cameraImage ? (
+                      <div className="relative w-full h-full">
+                        <img src={cameraImage} alt="Captured" className="w-full h-full object-cover" />
+                        <button 
+                          onClick={() => setCameraImage(null)}
+                          className="absolute top-2 right-2 p-2 bg-black/50 text-white rounded-full hover:bg-black/70 backdrop-blur-sm transition-all"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="relative w-full h-full">
+                        {/* @ts-ignore - react-webcam type definitions are overly strict in this version */}
+                        <Webcam
+                          audio={false}
+                          ref={webcamRef}
+                          screenshotFormat="image/jpeg"
+                          videoConstraints={{ facingMode: "environment" }}
+                          className="w-full h-full object-cover"
+                        />
+                        <button 
+                          onClick={capture}
+                          className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-white text-gray-800 px-6 py-3 rounded-full font-bold text-sm shadow-xl active:scale-95 transition-all text-pink-500 border border-gray-200"
+                        >
+                          <Camera className="w-4 h-4 text-pink-500" />
+                          拍攝照片
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
 

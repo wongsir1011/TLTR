@@ -1,6 +1,8 @@
 {
   "name": "重點傳聲筒 (Point Messenger)",
   "description": "為另一半度身訂造的長文摘要工具，根據性格及接收能力生成 3 個重點。",
-  "requestFramePermissions": [],
+  "requestFramePermissions": [
+    "camera"
+  ],
   "majorCapabilities": []
 }
