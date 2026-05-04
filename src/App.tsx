@@ -183,7 +183,12 @@ export default function App() {
         if (!url.startsWith('http')) {
           throw new Error(t.errorNoUrl);
         }
-        textToSummarize = await handleScrape();
+        try {
+          textToSummarize = await handleScrape();
+        } catch (e) {
+          console.warn("Scraping API failed, falling back to sending URL directly to Gemini:", e);
+          textToSummarize = `請總結這個網址的內容: ${url}`;
+        }
       } else if (inputType === 'file') {
         if (!fileDetails) {
           throw new Error(t.errorNoUpload);
