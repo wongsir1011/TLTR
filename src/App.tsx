@@ -23,32 +23,36 @@ import {
   X,
   Zap,
   ZapOff,
-  ZoomIn
+  ZoomIn,
+  Globe
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { summarizeForPartner } from './lib/gemini';
+import { translations, type Language } from './translations';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
 export const PERSONALITY_OPTIONS = [
-  { id: 'logical', label: '理性邏輯', emoji: '🧐', description: '講道理、重數據、不喜歡廢話' },
-  { id: 'emotional', label: '感性溫柔', emoji: '❤️', description: '重感覺、需要情緒價值、溫暖' },
-  { id: 'impatient', label: '急躁求快', emoji: '⚡', description: '趕時間、只要重點、沒耐性' },
-  { id: 'detailed', label: '追求細節', emoji: '🔍', description: '要有具體背景、不喜歡含糊' },
-  { id: 'humorous', label: '幽默風趣', emoji: '🤣', description: '喜歡講笑、氣氛要輕鬆' },
+  { id: 'logical', emoji: '🧐', translationKey: 'rational' },
+  { id: 'emotional', emoji: '❤️', translationKey: 'emotional' },
+  { id: 'impatient', emoji: '⚡', translationKey: 'anxious' },
+  { id: 'easygoing', emoji: '☕', translationKey: 'easygoing' },
 ];
 
 export const RECEPTIVITY_OPTIONS = [
-  { id: 'no_patience', label: '冇耐性讀長文', emoji: '📉', prompt: '極致簡潔，直接講結論' },
-  { id: 'concrete_advice', label: '需要具體建議', emoji: '✅', prompt: '要有 action points' },
-  { id: 'emotional_trigger', label: '易被觸發情緒', emoji: '🌪️', prompt: '用詞要謹慎溫和，避免惹怒' },
-  { id: 'bullet_lover', label: '喜歡聽重點', emoji: '📌', prompt: '清晰列點，層次分明' },
+  { id: 'direct', emoji: '📉', translationKey: 'direct' },
+  { id: 'soft', emoji: '❤️', translationKey: 'soft' },
+  { id: 'detail', emoji: '🔍', translationKey: 'detail' },
 ];
 
 export default function App() {
+  const [uiLang, setUiLang] = useState<Language>('zh');
+  const [outputLang, setOutputLang] = useState<Language>('zh');
+  const t = translations[uiLang];
+  
   const [inputType, setInputType] = useState<'text' | 'url' | 'file' | 'camera'>('text');
   const [content, setContent] = useState('');
   const [url, setUrl] = useState('');
@@ -177,12 +181,12 @@ export default function App() {
 
       if (inputType === 'url') {
         if (!url.startsWith('http')) {
-          throw new Error('請輸入正確的網址 (需包含 http:// 或 https://)');
+          throw new Error(t.errorNoUrl);
         }
         textToSummarize = await handleScrape();
       } else if (inputType === 'file') {
         if (!fileDetails) {
-          throw new Error('請先上載文檔及圖像檔。');
+          throw new Error(t.errorNoUpload);
         }
         textToSummarize = [{
           inlineData: {
@@ -192,7 +196,7 @@ export default function App() {
         }];
       } else if (inputType === 'camera') {
         if (!cameraImage) {
-          throw new Error('請先使用相機拍攝照片。');
+          throw new Error(t.errorNoCamera);
         }
         const base64Data = cameraImage.split(',')[1];
         textToSummarize = [{
@@ -203,14 +207,23 @@ export default function App() {
         }];
       } else {
         if (!content.trim()) {
-          throw new Error('請輸入長文內容或網址。');
+          throw new Error(t.errorNoText);
         }
       }
 
-      const p = PERSONALITY_OPTIONS.find(o => o.id === personality)?.label || personality;
-      const r = RECEPTIVITY_OPTIONS.find(o => o.id === receptivity)?.label || receptivity;
+      const selectedPersonality = PERSONALITY_OPTIONS.find(o => o.id === personality);
+      const selectedReceptivity = RECEPTIVITY_OPTIONS.find(o => o.id === receptivity);
+      
+      const pId = selectedPersonality?.translationKey as keyof typeof t.personalityOptions;
+      const rId = selectedReceptivity?.translationKey as keyof typeof t.receptivityOptions;
 
-      const result = await summarizeForPartner(textToSummarize, p, r);
+      const pLabel = pId ? t.personalityOptions[pId].label : personality;
+      const rLabel = rId ? t.receptivityOptions[rId].label : receptivity;
+      
+      const pContext = pId ? t.personalityOptions[pId].label : personality;
+      const rContext = rId ? `${t.receptivityOptions[rId].label}: ${t.receptivityOptions[rId].prompt}` : receptivity;
+
+      const result = await summarizeForPartner(textToSummarize, pContext, rContext, outputLang);
       setPoints(result);
     } catch (err: any) {
       setError(err.message || '生成失敗，請稍後再試。');
@@ -223,19 +236,19 @@ export default function App() {
     if (points.length === 0) return;
     
     const intro = PERSONALITY_OPTIONS.find(o => o.id === personality)?.id === 'emotional' 
-      ? '特登為你準備咗呢篇嘢嘅 3 個重點，費事你睇得咁辛苦 ❤️'
-      : '長話短說，呢篇文有 3 個重點你要知：';
+      ? t.shareIntroSoft
+      : t.shareIntroDirect;
 
     let text = `${intro}\n\n${points.map((p, i) => `${indexToCircle(i)} ${p}`).join('\n\n')}`;
     
     if (inputType === 'url' && url) {
-      text += `\n\n原文：${url}`;
+      text += `\n\nURL: ${url}`;
     }
     
-    text += `\n\n(來自重點傳聲筒 Pointy)`;
+    text += `\n\n${t.shareFooter}`;
     
     const shareData = {
-      title: '為你準備的重點摘要',
+      title: t.shareTitle,
       text: text,
     };
 
@@ -249,7 +262,7 @@ export default function App() {
       }
     } catch (err) {
       if ((err as Error).name !== 'AbortError') {
-        setError('分享失敗，請使用複製功能。');
+        setError(t.shareError);
       }
     }
   };
@@ -274,9 +287,23 @@ export default function App() {
           <div className="bg-white/60 p-3 rounded-2xl shadow-sm backdrop-blur-md border border-white/40">
             <Sparkles className="w-8 h-8 text-pink-500" />
           </div>
-          <div>
-            <h1 className="text-2xl font-black tracking-tight text-gray-800">重點傳聲筒 Pointy</h1>
-            <p className="text-xs font-semibold text-gray-500 uppercase tracking-widest">愛與溝通的翻譯機</p>
+          <div className="flex-grow">
+            <h1 className="text-2xl font-black tracking-tight text-gray-800">{t.appTitle}</h1>
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-widest">{t.appSubtitle}</p>
+          </div>
+          <div className="hidden sm:flex items-center gap-2 bg-white/50 backdrop-blur-sm p-1 rounded-xl shadow-sm border border-white/60">
+             <button
+                onClick={() => setUiLang('zh')}
+                className={cn("px-3 py-1.5 text-xs font-bold rounded-lg transition-all", uiLang === 'zh' ? "bg-white text-pink-500 shadow-sm" : "text-gray-500 hover:bg-white/50")}
+             >
+               中文
+             </button>
+             <button
+                onClick={() => setUiLang('en')}
+                className={cn("px-3 py-1.5 text-xs font-bold rounded-lg transition-all", uiLang === 'en' ? "bg-white text-pink-500 shadow-sm" : "text-gray-500 hover:bg-white/50")}
+             >
+               EN
+             </button>
           </div>
         </header>
 
@@ -286,14 +313,40 @@ export default function App() {
             <section className="backdrop-blur-xl bg-white/40 border border-white/40 rounded-3xl p-6 shadow-2xl">
               <div className="flex items-center gap-2 mb-6">
                 <Settings2 className="w-4 h-4 text-pink-500" />
-                <h2 className="text-xs font-bold uppercase tracking-wider text-gray-500">性格及接收特徵</h2>
+                <h2 className="text-xs font-bold uppercase tracking-wider text-gray-500">{t.step1Title}</h2>
               </div>
 
               <div className="space-y-6">
                 <div>
-                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3 block">另一半性格</label>
+                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3 block">{t.outputLangTitle}</label>
+                  <div className="flex gap-2 p-1 bg-white/30 rounded-xl mb-4 border border-white/40 overflow-x-auto whitespace-nowrap scrollbar-hide">
+                    <button
+                      onClick={() => setOutputLang('zh')}
+                      className={cn(
+                        "flex-1 min-w-[70px] flex items-center justify-center gap-1.5 py-2 rounded-lg text-[10px] md:text-[11px] font-bold transition-all",
+                        outputLang === 'zh' ? "bg-white text-pink-500 shadow-sm" : "text-gray-500"
+                      )}
+                    >
+                      <Globe className="w-3.5 h-3.5" /> 中文
+                    </button>
+                    <button
+                      onClick={() => setOutputLang('en')}
+                      className={cn(
+                        "flex-1 min-w-[70px] flex items-center justify-center gap-1.5 py-2 rounded-lg text-[10px] md:text-[11px] font-bold transition-all",
+                        outputLang === 'en' ? "bg-white text-pink-500 shadow-sm" : "text-gray-500"
+                      )}
+                    >
+                      <Globe className="w-3.5 h-3.5" /> English
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3 block">{t.partnerPersonality}</label>
                   <div className="grid grid-cols-2 gap-2">
-                    {PERSONALITY_OPTIONS.map((opt) => (
+                    {PERSONALITY_OPTIONS.map((opt) => {
+                      const tKey = opt.translationKey as keyof typeof t.personalityOptions;
+                      return (
                       <button
                         key={opt.id}
                         onClick={() => setPersonality(opt.id)}
@@ -304,16 +357,18 @@ export default function App() {
                             : "bg-white/50 border-white/60 text-gray-600 hover:bg-white/80"
                         )}
                       >
-                        {opt.emoji} {opt.label}
+                        {opt.emoji} {t.personalityOptions[tKey]?.label || opt.id}
                       </button>
-                    ))}
+                    )})}
                   </div>
                 </div>
 
                 <div>
-                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3 block">溝通偏好</label>
+                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3 block">{t.communicationPref}</label>
                   <div className="grid grid-cols-1 gap-2">
-                    {RECEPTIVITY_OPTIONS.map((opt) => (
+                    {RECEPTIVITY_OPTIONS.map((opt) => {
+                      const tKey = opt.translationKey as keyof typeof t.receptivityOptions;
+                      return (
                       <button
                         key={opt.id}
                         onClick={() => setReceptivity(opt.id)}
@@ -326,11 +381,13 @@ export default function App() {
                       >
                         <span className="text-lg">{opt.emoji}</span>
                         <div>
-                          <p className="text-xs font-bold">{opt.label}</p>
-                          <p className={cn("text-[9px] opacity-70 leading-tight", receptivity === opt.id ? "text-pink-50" : "text-gray-400")}>{opt.prompt}</p>
+                          <p className="text-xs font-bold">{t.receptivityOptions[tKey]?.label || opt.id}</p>
+                          <p className={cn("text-[9px] opacity-70 leading-tight mt-0.5", receptivity === opt.id ? "text-pink-50" : "text-gray-400")}>
+                            {t.receptivityOptions[tKey]?.prompt}
+                          </p>
                         </div>
                       </button>
-                    ))}
+                    )})}
                   </div>
                 </div>
               </div>
@@ -339,7 +396,7 @@ export default function App() {
             <section className="backdrop-blur-xl bg-white/40 border border-white/40 rounded-3xl p-6 shadow-2xl">
               <div className="flex items-center gap-2 mb-6">
                 <Send className="w-4 h-4 text-pink-500" />
-                <h2 className="text-xs font-bold uppercase tracking-wider text-gray-500">來源內容</h2>
+                <h2 className="text-xs font-bold uppercase tracking-wider text-gray-500">{t.step2Title}</h2>
               </div>
 
               <div className="flex gap-2 p-1 bg-white/30 rounded-xl mb-4 border border-white/40 overflow-x-auto whitespace-nowrap scrollbar-hide">
@@ -350,7 +407,7 @@ export default function App() {
                     inputType === 'text' ? "bg-white text-pink-500 shadow-sm" : "text-gray-500"
                   )}
                 >
-                  <TextIcon className="w-3.5 h-3.5" /> 文字
+                  <TextIcon className="w-3.5 h-3.5" /> {t.tabText}
                 </button>
                 <button
                   onClick={() => setInputType('url')}
@@ -359,7 +416,7 @@ export default function App() {
                     inputType === 'url' ? "bg-white text-pink-500 shadow-sm" : "text-gray-500"
                   )}
                 >
-                  <LinkIcon className="w-3.5 h-3.5" /> 網址
+                  <LinkIcon className="w-3.5 h-3.5" /> {t.tabUrl}
                 </button>
                 <button
                   onClick={() => setInputType('file')}
@@ -368,7 +425,7 @@ export default function App() {
                     inputType === 'file' ? "bg-white text-pink-500 shadow-sm" : "text-gray-500"
                   )}
                 >
-                  <FileText className="w-3.5 h-3.5" /> 上載
+                  <FileText className="w-3.5 h-3.5" /> {t.tabUpload}
                 </button>
                 <button
                   onClick={() => setInputType('camera')}
@@ -377,7 +434,7 @@ export default function App() {
                     inputType === 'camera' ? "bg-white text-pink-500 shadow-sm" : "text-gray-500"
                   )}
                 >
-                  <Camera className="w-3.5 h-3.5" /> 相機
+                  <Camera className="w-3.5 h-3.5" /> {t.tabCamera}
                 </button>
               </div>
 
@@ -386,7 +443,7 @@ export default function App() {
                   <textarea
                     value={content}
                     onChange={(e) => setContent(e.target.value)}
-                    placeholder="貼上長篇文章內容..."
+                    placeholder={t.pasteTextPlaceholder}
                     className="w-full h-32 bg-white/50 border border-white/60 rounded-2xl p-4 text-sm focus:outline-none focus:ring-2 focus:ring-pink-300 placeholder-gray-400 resize-none transition-all"
                   />
                 )}
@@ -397,7 +454,7 @@ export default function App() {
                       type="url"
                       value={url}
                       onChange={(e) => setUrl(e.target.value)}
-                      placeholder="https://..."
+                      placeholder={t.urlPlaceholder}
                       className="w-full p-4 bg-white/50 border border-white/60 rounded-2xl text-sm focus:outline-none focus:ring-2 focus:ring-pink-300 placeholder-gray-400 pl-12 transition-all"
                     />
                     <LinkIcon className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-300" />
@@ -506,10 +563,10 @@ export default function App() {
                   {isLoading ? (
                     <>
                       <Loader2 className="w-4 h-4 animate-spin" />
-                      生成中...
+                      {t.buttonGenerating}
                     </>
                   ) : (
-                    <>生成專屬重點 <Send className="w-4 h-4" /></>
+                    <>{t.buttonGenerate} <Send className="w-4 h-4" /></>
                   )}
                 </button>
               </div>
@@ -530,13 +587,13 @@ export default function App() {
                   >
                     <div className="absolute top-0 right-0 p-8 hidden md:block">
                       <span className="px-4 py-1.5 bg-green-100 text-green-700 text-[10px] font-bold rounded-full uppercase tracking-widest border border-green-200">
-                        {PERSONALITY_OPTIONS.find(o => o.id === personality)?.emoji} 已根據「{PERSONALITY_OPTIONS.find(o => o.id === personality)?.label}」優化
+                        {PERSONALITY_OPTIONS.find(o => o.id === personality)?.emoji} {t.optimizedFor.replace('{personality}', t.personalityOptions[PERSONALITY_OPTIONS.find(o => o.id === personality)?.translationKey as keyof typeof t.personalityOptions]?.label || '')}
                       </span>
                     </div>
 
                     <div className="mb-10">
-                      <p className="text-gray-400 text-[10px] font-black uppercase tracking-[0.2em] mb-2">生成摘要內容</p>
-                      <h2 className="text-3xl font-black text-gray-800 leading-tight">為你準備的 3 個重點</h2>
+                      <p className="text-gray-400 text-[10px] font-black uppercase tracking-[0.2em] mb-2">{t.appTitle}</p>
+                      <h2 className="text-3xl font-black text-gray-800 leading-tight">{t.resultsTitle}</h2>
                     </div>
 
                     <div className="space-y-10 flex-grow">
@@ -561,20 +618,20 @@ export default function App() {
                           className="flex items-center gap-2 text-xs font-bold text-gray-600 hover:text-gray-900 bg-white/60 px-6 py-3 rounded-full border border-white/40 shadow-sm transition-all active:scale-95"
                         >
                           {copied ? (
-                            <><Check className="w-4 h-4 text-green-500" /> 已複製文字</>
+                            <><Check className="w-4 h-4 text-green-500" /> {t.btnCopied}</>
                           ) : (
-                            <><Copy className="w-4 h-4" /> 複製文字</>
+                            <><Copy className="w-4 h-4" /> {t.btnCopy}</>
                           )}
                         </button>
                         <button 
                           className="flex items-center gap-2 text-xs font-bold text-pink-500 bg-white/60 px-6 py-3 rounded-full border border-white/40 shadow-sm transition-all active:scale-95"
                           onClick={handleShare}
                         >
-                          <Share2 className="w-4 h-4" /> 發送給另一半
+                          <Share2 className="w-4 h-4" /> {t.btnShare}
                         </button>
                       </div>
                       <p className="text-[10px] text-gray-400 font-medium">
-                        * 已根據接收能力「{RECEPTIVITY_OPTIONS.find(o => o.id === receptivity)?.label}」優化語法
+                        {t.optimizedSyntax.replace('{receptivity}', t.receptivityOptions[RECEPTIVITY_OPTIONS.find(o => o.id === receptivity)?.translationKey as keyof typeof t.receptivityOptions]?.label || '')}
                       </p>
                     </div>
                   </motion.div>
@@ -589,14 +646,14 @@ export default function App() {
                       📝
                     </div>
                     <div>
-                      <h3 className="text-xl font-black text-gray-400">尚未生成摘要</h3>
-                      <p className="text-gray-400 text-sm">請完成左側設定並點擊「生成專屬重點」</p>
+                      <h3 className="text-xl font-black text-gray-400">{t.emptyStateTitle}</h3>
+                      <p className="text-gray-400 text-sm">{t.emptyStateSubtitle}</p>
                     </div>
                   </motion.div>
                 ) : (
                    <motion.div key="loading" className="flex flex-col items-center gap-4 text-gray-400">
                      <Loader2 className="w-10 h-10 animate-spin text-pink-500" />
-                     <p className="text-sm font-bold tracking-widest uppercase">AI 正在深度解構內容中...</p>
+                     <p className="text-sm font-bold tracking-widest uppercase">{t.loadingTip}</p>
                    </motion.div>
                 )}
               </AnimatePresence>
@@ -618,15 +675,15 @@ export default function App() {
                 💡
               </div>
               <div className="flex-grow">
-                <h4 className="text-xs font-black text-gray-800 uppercase tracking-widest mb-0.5">AI 哄另一半小貼士</h4>
-                <p className="text-xs text-gray-600 leading-tight">建議傳送時加句「知道你今日忙，特登幫你執咗 3 個重點，最尾嗰點最適合你」。</p>
+                <h4 className="text-xs font-black text-gray-800 uppercase tracking-widest mb-0.5">{t.tipTitle}</h4>
+                <p className="text-xs text-gray-600 leading-tight">{t.tipContent}</p>
               </div>
             </motion.div>
           </div>
         </div>
 
         <footer className="mt-16 text-center text-gray-400">
-          <p className="text-[10px] font-black tracking-[0.4em] uppercase mb-6">Designed with Love and AI</p>
+          <p className="text-[10px] font-black tracking-[0.4em] uppercase mb-6">{t.footerText}</p>
           <div className="flex justify-center gap-8 opacity-40 grayscale group hover:grayscale-0 transition-all">
             <span className="text-2xl hover:scale-125 transition-transform cursor-default">💘</span>
             <span className="text-2xl hover:scale-125 transition-transform cursor-default">💌</span>
