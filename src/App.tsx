@@ -20,7 +20,10 @@ import {
   Share2,
   FileText,
   Camera,
-  X
+  X,
+  Zap,
+  ZapOff,
+  ZoomIn
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -52,6 +55,12 @@ export default function App() {
   const [fileDetails, setFileDetails] = useState<{ name: string, data: string, mimeType: string } | null>(null);
   const [cameraImage, setCameraImage] = useState<string | null>(null);
   
+  const [zoom, setZoom] = useState(1);
+  const [maxZoom, setMaxZoom] = useState(1);
+  const [hasFlash, setHasFlash] = useState(false);
+  const [flashOn, setFlashOn] = useState(false);
+  const trackRef = useRef<MediaStreamTrack | null>(null);
+
   const [personality, setPersonality] = useState(PERSONALITY_OPTIONS[0].id);
   const [receptivity, setReceptivity] = useState(RECEPTIVITY_OPTIONS[0].id);
   
@@ -61,6 +70,54 @@ export default function App() {
   const [copied, setCopied] = useState(false);
 
   const webcamRef = useRef<Webcam>(null);
+
+  const handleUserMedia = useCallback((stream: MediaStream) => {
+    const track = stream.getVideoTracks()[0];
+    trackRef.current = track;
+    // Typescript might not have getCapabilities on MediaStreamTrack by default in some setups
+    const capabilities = (track as any).getCapabilities?.() || {};
+    
+    if (capabilities.zoom) {
+      setMaxZoom(capabilities.zoom.max || 1);
+      setZoom(capabilities.zoom.min || 1);
+    } else {
+      setMaxZoom(1);
+    }
+
+    if (capabilities.torch) {
+      setHasFlash(true);
+    } else {
+      setHasFlash(false);
+    }
+  }, []);
+
+  const handleZoomChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newZoom = Number(e.target.value);
+    setZoom(newZoom);
+    if (trackRef.current && trackRef.current.applyConstraints) {
+      try {
+        await trackRef.current.applyConstraints({
+           advanced: [{ zoom: newZoom }]
+        } as any);
+      } catch (err) {
+        console.error(err);
+      }
+    }
+  };
+
+  const toggleFlash = async () => {
+    const newFlashState = !flashOn;
+    setFlashOn(newFlashState);
+    if (trackRef.current && trackRef.current.applyConstraints) {
+      try {
+        await trackRef.current.applyConstraints({
+          advanced: [{ torch: newFlashState }]
+        } as any);
+      } catch (err) {
+        console.error(err);
+      }
+    }
+  };
 
   const capture = useCallback(() => {
     const imageSrc = webcamRef.current?.getScreenshot();
@@ -399,8 +456,34 @@ export default function App() {
                           ref={webcamRef}
                           screenshotFormat="image/jpeg"
                           videoConstraints={{ facingMode: "environment" }}
+                          onUserMedia={handleUserMedia}
                           className="w-full h-full object-cover"
                         />
+                        {hasFlash && (
+                          <button 
+                            onClick={toggleFlash}
+                            className="absolute top-4 right-4 p-3 bg-black/40 text-white rounded-full hover:bg-black/60 backdrop-blur-sm transition-all shadow-sm"
+                          >
+                            {flashOn ? <Zap className="w-5 h-5 text-yellow-400" /> : <ZapOff className="w-5 h-5" />}
+                          </button>
+                        )}
+                        {maxZoom > 1 && (
+                          <div className="absolute right-4 top-1/2 -translate-y-1/2 flex flex-col items-center gap-2 bg-black/40 p-3 rounded-full xl:backdrop-blur-sm h-[130px] w-10">
+                            <ZoomIn className="w-4 h-4 text-white" />
+                            <div className="relative h-[80px] w-4 flex justify-center mt-1">
+                              <input 
+                                type="range"
+                                min="1"
+                                max={maxZoom}
+                                step="0.1"
+                                value={zoom}
+                                onChange={handleZoomChange}
+                                className="absolute w-[80px] h-1 appearance-none cursor-pointer rounded-full bg-white/30 outline-none
+                                  [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white origin-left -rotate-90 -left-9 top-full mt-2"
+                              />
+                            </div>
+                          </div>
+                        )}
                         <button 
                           onClick={capture}
                           className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-white text-gray-800 px-6 py-3 rounded-full font-bold text-sm shadow-xl active:scale-95 transition-all text-pink-500 border border-gray-200"
