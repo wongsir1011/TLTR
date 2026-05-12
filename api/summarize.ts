@@ -54,7 +54,7 @@ export default async function handler(req: any, res: any) {
     }
 
     const response = await ai.models.generateContent({
-      model: "gemini-2.0-flash", 
+      model: "gemini-3-flash-preview", 
       contents: { parts: finalParts },
       config: {
         responseMimeType: "application/json",
